@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { REVIEW_ITEM_IDS } from "@/app/lib/taxonomy-data";
 import { AnswersMap, ReviewerInfo, ScreenId, VerdictKey } from "@/app/lib/types";
 import ComparisonMatrix from "@/app/components/ComparisonMatrix";
@@ -155,9 +154,6 @@ export default function SurveyWizard() {
       <footer className="foot">
         <div className="wrap">
           <span>YCP Holdings — MSD Global Practice · Internal working document for MP syndication</span>
-          <Link href="/results" style={{ color: "var(--a2)" }}>
-            View survey results →
-          </Link>
           <span>One YCP Industry Practice Alignment · v1</span>
         </div>
       </footer>

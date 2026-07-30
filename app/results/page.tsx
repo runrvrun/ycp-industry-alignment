@@ -1,9 +1,14 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { prisma } from "@/app/lib/prisma";
 import { REVIEW_ITEM_IDS, REVIEW_ITEM_LABELS } from "@/app/lib/taxonomy-data";
 import { tallyByItem } from "@/app/lib/aggregate";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Results",
+};
 
 export default async function ResultsPage() {
   const submissions = await prisma.submission.findMany({
