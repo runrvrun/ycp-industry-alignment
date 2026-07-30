@@ -33,26 +33,12 @@ function buildPayload(reviewer: ReviewerInfo, answers: AnswersMap) {
   };
 }
 
-function downloadJSON(payload: ReturnType<typeof buildPayload>) {
-  const safe = (payload.reviewer.name || "anonymous").replace(/[^\w-]+/g, "_");
-  const stamp = new Date().toISOString().slice(0, 10);
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `YCP_taxonomy_response_${safe}_${stamp}.json`;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    URL.revokeObjectURL(a.href);
-    a.remove();
-  }, 0);
-}
-
 export default function SurveyWizard() {
   const [screen, setScreen] = useState<ScreenId>("s1");
   const [reviewer, setReviewer] = useState<ReviewerInfo>({ name: "", office: "" });
   const [answers, setAnswers] = useState<AnswersMap>(emptyAnswers);
-  const [showNameError, setShowNameError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [confirmText, setConfirmText] = useState("");
 
@@ -75,18 +61,18 @@ export default function SurveyWizard() {
 
   function requireName(): boolean {
     const ok = reviewer.name.trim().length > 0;
-    setShowNameError(!ok);
-    if (!ok) go("s3");
+    if (!ok) {
+      setErrorMessage("Please add your name at the top before submitting.");
+      go("s3");
+    }
     return ok;
   }
 
-  function handleDownload() {
-    if (!requireName()) return;
-    downloadJSON(buildPayload(reviewer, answers));
-  }
-
   async function handleSubmit() {
+    if (submitting) return;
     if (!requireName()) return;
+    setErrorMessage(null);
+    setSubmitting(true);
     const payload = buildPayload(reviewer, answers);
     let ok = false;
     try {
@@ -99,12 +85,14 @@ export default function SurveyWizard() {
     } catch {
       ok = false;
     }
+    setSubmitting(false);
+    if (!ok) {
+      setErrorMessage("Something went wrong submitting your response — please try again in a moment.");
+      return;
+    }
     setConfirmText(
-      ok
-        ? `Thank you, ${payload.reviewer.name.split(" ")[0] || ""}. Your comments have been captured and will be included in consolidation ahead of the 18–19 August DMC/GMC.`
-        : `We couldn't reach the server, so your response was saved locally as a JSON file instead — please send it to the MSD Global Practice lead.`
+      `Thank you, ${payload.reviewer.name.split(" ")[0] || ""}. Your comments have been captured and will be included in consolidation ahead of the 18–19 August DMC/GMC.`
     );
-    if (!ok) downloadJSON(payload);
     setSubmitted(true);
     go("s4");
   }
@@ -156,9 +144,9 @@ export default function SurveyWizard() {
             answers={answers}
             onVerdictChange={handleVerdictChange}
             onCommentChange={handleCommentChange}
-            showNameError={showNameError}
+            errorMessage={errorMessage}
+            submitting={submitting}
             onSubmit={handleSubmit}
-            onDownload={handleDownload}
           />
           <NextSteps active={screen === "s4"} onNavigate={go} submitted={submitted} confirmText={confirmText} />
         </div>

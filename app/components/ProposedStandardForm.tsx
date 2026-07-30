@@ -9,9 +9,9 @@ interface ProposedStandardFormProps {
   answers: AnswersMap;
   onVerdictChange: (itemId: string, verdict: VerdictKey) => void;
   onCommentChange: (itemId: string, comment: string) => void;
-  showNameError: boolean;
+  errorMessage: string | null;
+  submitting: boolean;
   onSubmit: () => void;
-  onDownload: () => void;
 }
 
 export default function ProposedStandardForm({
@@ -21,9 +21,9 @@ export default function ProposedStandardForm({
   answers,
   onVerdictChange,
   onCommentChange,
-  showNameError,
+  errorMessage,
+  submitting,
   onSubmit,
-  onDownload,
 }: ProposedStandardFormProps) {
   return (
     <section className={`screen${active ? " active" : ""}`} id="s3" role="tabpanel">
@@ -232,13 +232,10 @@ export default function ProposedStandardForm({
         </div>
       </details>
 
-      <div className={`err${showNameError ? " show" : ""}`}>Please add your name at the top before submitting.</div>
+      <div className={`err${errorMessage ? " show" : ""}`}>{errorMessage}</div>
       <div className="submitbar">
-        <button className="btn primary" onClick={onSubmit}>
-          Submit my response
-        </button>
-        <button className="btn ghost" onClick={onDownload}>
-          Download my response (JSON)
+        <button className="btn primary" onClick={onSubmit} disabled={submitting}>
+          {submitting ? "Submitting…" : "Submit my response"}
         </button>
         <span style={{ fontSize: 13, color: "var(--sub)" }}>You can change any answer before submitting.</span>
       </div>
