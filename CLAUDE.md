@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Next.js (App Router, TypeScript) internal tool for MSD Global Practice: a 4-screen MP-facing survey that presents a proposed standardization of YCP's industry-practice taxonomy (reconciling naming across the public website, credentials pack, HUB, Expert database, and MSD Global Focus slide), collects each reviewer's verdict (Agree / Suggest a change / Object) + comments per proposed practice, persists submissions to a SQLite database via Prisma, and exposes a `/results` page so the practice lead can see all responses.
 
-`YCP_Industry_Alignment_Tool_1.html` at the repo root is the original single-file HTML prototype this app was converted from — kept only as a reference for the source content/design, not part of the running app.
+`YCP_Industry_Alignment_Tool_1.html`/`_2.html` at the repo root are the colleague's single-file HTML prototypes (v2 is a content revision of v1 — see its diff for what changed) — kept only as reference for the source content/design, not part of the running app. When a new revision lands, diff it against the previous one to scope the change rather than re-reading the whole file.
 
 ## Commands
 
