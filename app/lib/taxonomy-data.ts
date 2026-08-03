@@ -249,9 +249,10 @@ export const PRACTICES: Practice[] = [
   {
     id: "tmt",
     name: "Technology, Media & Telecommunications",
-    def: "Software, hardware, semiconductors, internet & platforms, media & entertainment, and telecom.",
-    hub: ["Technology, Media & Telecommunications"],
-    why: "Universal and already identical across all five sources — no change.",
+    def: "Software, hardware, semiconductors, internet & platforms, IT & IT-enabled services (ITeS / BPO / call centres), media & entertainment, and telecom.",
+    rolls: ["Includes IT-enabled services — BPO and call centres (the ITeS / IT-BPM space)"],
+    hub: ["Technology, Media & Telecommunications", "Call Centres"],
+    why: "Consistent across sources. IT-enabled services — BPO and call centres — sit here too: the same delivery model and often the same players as IT services (the IT-BPM sector).",
   },
 ];
 
@@ -260,7 +261,6 @@ export const HUB_CROSSCUTTING: string[] = [
   "Private Equity and Investors",
   "Advisors",
   "Professional Services",
-  "Call Centres",
   "Conglomerate",
   "Holding Companies",
   "Others",

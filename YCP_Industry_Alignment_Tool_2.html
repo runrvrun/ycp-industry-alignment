@@ -1,0 +1,896 @@
+<!--
+================================================================================
+ ONE YCP — INDUSTRY PRACTICE ALIGNMENT TOOL
+ Syndication instrument for MP review ahead of DMC/GMC ratification.
+
+ ── DEPLOYMENT NOTES FOR YCP DIGITAL (Arfian) ──────────────────────────────────
+ This is a single, self-contained HTML file. No external dependencies, no build
+ step. Host it as-is on the internal server.
+
+ To capture responses centrally (so all submissions are visible to the MSD
+ Global Practice lead), wire ONE function:
+
+     async function submitResponses(payload) { ... }   // see bottom of this file
+
+ Currently it falls back to a client-side JSON download so the tool works
+ standalone. Replace its body with a POST to your endpoint, e.g.:
+
+     const r = await fetch('/api/ycp-taxonomy/responses', {
+       method: 'POST',
+       headers: {'Content-Type': 'application/json'},
+       body: JSON.stringify(payload)
+     });
+     return r.ok;
+
+ The payload schema is documented above that function. Each submission is one
+ reviewer's full set of per-practice verdicts + comments. For the admin view,
+ store submissions keyed by reviewer name + timestamp and expose a simple
+ read-only aggregation page to the practice lead. Do NOT use localStorage here.
+================================================================================
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One YCP — Industry Practice Alignment</title>
+<style>
+  :root{
+    --navy:#1F497D; --navy-dark:#001A44;
+    --a1:#548DD4; --a2:#98BBE5; --a3:#BBD1EE; --a4:#DDE8F6;
+    --red:#C00000; --amber:#B26A00; --amber-fill:#FBF0DA;
+    --ink:#101828; --sub:#5A6472; --hair:#E3E8EF; --gray-mid:#A2A2A2;
+    --bg:#FFFFFF; --paper:#F6F8FB;
+    --ok-fill:#EEF3FA; --gap-fill:#FBECEC;
+    --font: "Calibri","Segoe UI",Arial,Helvetica,sans-serif;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(31,73,125,.06);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);
+    font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{color:var(--navy);margin:0 0 .4em;line-height:1.2;font-weight:700}
+  p{margin:0 0 .8em}
+  a{color:var(--a1)}
+  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--a1);font-weight:700;margin:0 0 .5em}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+  /* ---------- Header ---------- */
+  header.top{background:var(--navy-dark);color:#fff}
+  .top .wrap{display:flex;align-items:center;gap:18px;padding:16px 24px}
+  .top img{height:30px;display:block}
+  .top .divider{width:1px;height:26px;background:rgba(255,255,255,.28)}
+  .top .htext{display:flex;flex-direction:column}
+  .top .htext .k{font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--a2);font-weight:700}
+  .top .htext .t{font-size:16px;font-weight:700;color:#fff;letter-spacing:.01em}
+  .top .status{margin-left:auto;font-size:12px;color:var(--a2);text-align:right;line-height:1.35}
+  .top .status b{color:#fff;font-weight:700}
+
+  /* ---------- Step nav ---------- */
+  nav.steps{position:sticky;top:0;z-index:40;background:#fff;border-bottom:1px solid var(--hair);
+    box-shadow:0 1px 0 rgba(16,24,40,.02)}
+  nav.steps .wrap{display:flex;gap:4px;padding:0 24px;overflow-x:auto}
+  .stepbtn{appearance:none;border:0;background:none;cursor:pointer;font-family:inherit;
+    padding:14px 14px 12px;display:flex;align-items:center;gap:9px;color:var(--sub);
+    border-bottom:3px solid transparent;white-space:nowrap;font-size:13.5px;font-weight:600}
+  .stepbtn:hover{color:var(--navy)}
+  .stepbtn .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+    border-radius:50%;background:var(--a4);color:var(--navy);font-size:12px;font-weight:700;flex:none}
+  .stepbtn[aria-selected="true"]{color:var(--navy);border-bottom-color:var(--navy)}
+  .stepbtn[aria-selected="true"] .n{background:var(--navy);color:#fff}
+
+  /* ---------- Screens ---------- */
+  main{padding:34px 0 80px}
+  .screen{display:none;animation:fade .35s ease both}
+  .screen.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.screen{animation:none}}
+
+  .lead{font-size:26px;color:var(--navy);font-weight:700;max-width:24ch;line-height:1.18;margin:0 0 6px}
+  .sub{font-size:16px;color:var(--sub);max-width:70ch}
+  .screen-head{margin-bottom:24px}
+
+  .card{background:#fff;border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow)}
+  .card.pad{padding:22px 24px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+
+  /* ---------- Matrix (Screen 1 signature) ---------- */
+  .matrix-meta{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;margin:0 0 16px}
+  .stat{background:#fff;border:1px solid var(--hair);border-left:4px solid var(--navy);
+    border-radius:10px;padding:12px 16px;box-shadow:var(--shadow)}
+  .stat .big{font-size:30px;font-weight:700;color:var(--navy);line-height:1}
+  .stat .lab{font-size:12px;color:var(--sub);margin-top:4px}
+  .stat.warn{border-left-color:var(--amber)} .stat.warn .big{color:var(--amber)}
+  .stat.good{border-left-color:var(--a1)} .stat.good .big{color:var(--a1)}
+
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin:2px 0 14px;font-size:12.5px;color:var(--sub)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .sw{width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,.06);flex:none}
+  .sw.ok{background:var(--ok-fill)} .sw.div{background:var(--amber-fill)} .sw.gap{background:var(--gap-fill)}
+
+  .matrix-scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:12px;background:#fff;box-shadow:var(--shadow)}
+  table.matrix{border-collapse:separate;border-spacing:0;width:100%;min-width:860px;font-size:13px}
+  table.matrix th,table.matrix td{padding:9px 11px;text-align:left;vertical-align:top;border-bottom:1px solid var(--hair)}
+  table.matrix thead th{position:sticky;top:0;background:var(--navy);color:#fff;font-weight:700;font-size:12px;
+    letter-spacing:.02em;z-index:2;border-bottom:0}
+  table.matrix thead th:first-child{background:var(--navy-dark)}
+  table.matrix tbody th{background:var(--paper);color:var(--navy);font-weight:700;position:sticky;left:0;z-index:1;
+    min-width:190px;border-right:1px solid var(--hair)}
+  td.cell{position:relative;cursor:default}
+  td.cell .v{font-weight:600;color:var(--ink)}
+  td.cell .m{display:block;font-size:11px;color:var(--sub);margin-top:2px}
+  td.ok{background:var(--ok-fill)}
+  td.div{background:var(--amber-fill)}
+  td.div .v{color:var(--amber)}
+  td.gap{background:var(--gap-fill)}
+  td.gap .v{color:var(--red)}
+  tr:hover tbody th, tr:hover td{filter:brightness(.985)}
+  .aligned-row td, .aligned-row th{box-shadow:inset 0 0 0 9999px rgba(84,141,212,.05)}
+
+  .discs{margin-top:22px}
+  .disc-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:820px){.disc-list{grid-template-columns:1fr}}
+  .disc-list li{background:#fff;border:1px solid var(--hair);border-left:4px solid var(--amber);
+    border-radius:10px;padding:13px 15px;font-size:14px}
+  .disc-list li.gap{border-left-color:var(--red)}
+  .disc-list li b{color:var(--navy)}
+  .disc-list li .tag{display:inline-block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    font-weight:700;color:var(--amber);margin-bottom:4px}
+  .disc-list li.gap .tag{color:var(--red)}
+
+  .peerbox{margin-top:20px;background:linear-gradient(180deg,#fff, var(--a4));border:1px solid var(--a3);
+    border-radius:12px;padding:18px 22px}
+  .peerbox h3{margin-bottom:6px}
+  .peerbox .firms{font-size:12.5px;color:var(--sub);margin-top:8px}
+
+  /* ---------- Process (Screen 2) ---------- */
+  .hypo{background:var(--navy);color:#fff;border-radius:14px;padding:24px 26px;position:relative;overflow:hidden}
+  .hypo:before{content:"";position:absolute;inset:0;background:
+    radial-gradient(120% 140% at 100% 0%, rgba(84,141,212,.55), transparent 55%);opacity:.9}
+  .hypo > *{position:relative}
+  .hypo .eyebrow{color:var(--a2)}
+  .hypo p{color:#EAF1FA;font-size:17px;margin:0;max-width:78ch}
+  .hypo p b{color:#fff}
+
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:22px 0 8px;counter-reset:step}
+  @media(max-width:900px){.flow{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.flow{grid-template-columns:1fr}}
+  .step{background:#fff;border:1px solid var(--hair);border-top:4px solid var(--navy);border-radius:12px;
+    padding:16px 15px;box-shadow:var(--shadow);position:relative}
+  .step .n{width:26px;height:26px;border-radius:50%;background:var(--navy);color:#fff;font-weight:700;
+    display:flex;align-items:center;justify-content:center;font-size:13px;margin-bottom:9px}
+  .step h4{font-size:14.5px;margin-bottom:5px}
+  .step p{font-size:12.5px;color:var(--sub);margin:0}
+  .step.here{border-top-color:var(--amber);background:linear-gradient(180deg,#fff,var(--amber-fill))}
+  .step.here .n{background:var(--amber)}
+  .step .badge{display:inline-block;margin-top:9px;font-size:10.5px;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--amber)}
+
+  .timeline{margin-top:26px}
+  .tl{list-style:none;margin:0;padding:0;border-left:2px solid var(--a3);margin-left:8px}
+  .tl li{position:relative;padding:0 0 18px 26px}
+  .tl li:before{content:"";position:absolute;left:-7px;top:3px;width:12px;height:12px;border-radius:50%;
+    background:#fff;border:3px solid var(--a1)}
+  .tl li.key:before{border-color:var(--navy);background:var(--navy)}
+  .tl .d{font-weight:700;color:var(--navy);font-size:14px}
+  .tl .x{font-size:13.5px;color:var(--sub)}
+
+  /* ---------- Proposed standard (Screen 3) ---------- */
+  .youbar{background:var(--a4);border:1px solid var(--a3);border-radius:12px;padding:16px 20px;margin-bottom:22px}
+  .youbar h3{margin-bottom:3px}
+  .youbar .row{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+  .field{display:flex;flex-direction:column;gap:5px;min-width:240px;flex:1}
+  .field label{font-size:12px;font-weight:700;color:var(--navy);letter-spacing:.02em}
+  .field label .req{color:var(--red)}
+  .field input{font-family:inherit;font-size:15px;padding:10px 12px;border:1px solid var(--gray-mid);
+    border-radius:8px;background:#fff;color:var(--ink)}
+  .field input:focus{outline:2px solid var(--a1);outline-offset:1px;border-color:var(--a1)}
+
+  .rulebox{background:#fff;border:1px solid var(--a3);border-radius:12px;box-shadow:var(--shadow);
+    padding:20px 22px;margin-bottom:22px;border-top:4px solid var(--navy)}
+  .rulebox h3{margin-bottom:4px}
+  .rule-steps{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:820px){.rule-steps{grid-template-columns:1fr}}
+  .rule-steps li{background:var(--paper);border:1px solid var(--hair);border-radius:10px;padding:13px 14px;font-size:13.5px}
+  .rule-steps li .q{display:block;font-weight:700;color:var(--navy);margin-bottom:4px}
+  .rule-steps li .arrow{color:var(--a1);font-weight:700}
+  .worked{margin-top:14px;font-size:13px;color:var(--sub);background:var(--a4);border-radius:8px;padding:11px 14px}
+  .worked b{color:var(--navy)}
+
+  .plist{display:flex;flex-direction:column;gap:16px}
+  .practice{background:#fff;border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+  .practice .body{padding:18px 20px}
+  .practice .pnum{font-size:12px;font-weight:700;color:var(--a1)}
+  .practice h3{font-size:19px;margin:2px 0 8px}
+  .practice .def{font-size:14.5px;color:var(--ink);margin:0 0 10px}
+  .practice .why{font-size:13.5px;color:var(--sub);margin:0}
+  .practice .why b{color:var(--navy)}
+  .practice ul.rolls{margin:6px 0 12px;padding-left:18px}
+  .practice ul.rolls li{font-size:13px;color:var(--sub);margin:2px 0}
+  .practice.attr{border-left:4px solid var(--amber)}
+  .practice.attr h3{color:var(--amber)}
+
+  .respond{background:var(--paper);border-top:1px solid var(--hair);padding:14px 20px}
+  .verdicts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .verdict{position:relative}
+  .verdict input{position:absolute;opacity:0;width:0;height:0}
+  .verdict label{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border:1px solid var(--gray-mid);
+    border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;color:var(--sub);background:#fff;user-select:none}
+  .verdict label .dot{width:9px;height:9px;border-radius:50%;background:var(--gray-mid)}
+  .verdict input:focus-visible + label{outline:2px solid var(--a1);outline-offset:2px}
+  .verdict input:checked + label{color:#fff;border-color:transparent}
+  .verdict.agree input:checked + label{background:var(--a1)} .verdict.agree label .dot{background:var(--a1)}
+  .verdict.change input:checked + label{background:var(--amber)} .verdict.change label .dot{background:var(--amber)}
+  .verdict.object input:checked + label{background:var(--red)} .verdict.object label .dot{background:var(--red)}
+  .respond textarea{width:100%;font-family:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--hair);
+    border-radius:8px;resize:vertical;min-height:44px;background:#fff;color:var(--ink)}
+  .respond textarea:focus{outline:2px solid var(--a1);outline-offset:1px;border-color:var(--a1)}
+  .respond .rlab{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--navy);margin-bottom:7px}
+
+  /* practices table (Screen 3) */
+  .ptable-scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);background:#fff}
+  table.ptable{width:100%;min-width:900px;border-collapse:separate;border-spacing:0;font-size:14px}
+  col.c-name{width:16%} col.c-inc{width:31%} col.c-why{width:28%} col.c-com{width:25%}
+  table.ptable thead th{background:var(--navy);color:#fff;font-size:12px;letter-spacing:.02em;text-align:left;
+    padding:13px 14px;font-weight:700;vertical-align:bottom;position:sticky;top:0;z-index:2}
+  table.ptable tbody td{padding:15px 14px;border-top:1px solid var(--hair);vertical-align:top}
+  table.ptable tbody tr:nth-child(even) td{background:var(--paper)}
+  table.ptable .pnum{display:block;font-size:11px;color:var(--a1);font-weight:700;margin-bottom:3px}
+  table.ptable .pname{font-weight:700;color:var(--navy);font-size:15.5px;line-height:1.25}
+  table.ptable ul.rolls{margin:8px 0 0;padding-left:16px}
+  table.ptable ul.rolls li{font-size:12.5px;color:var(--sub);margin:3px 0}
+  table.ptable .why{color:var(--sub);font-size:13px;line-height:1.5}
+  table.ptable .verdicts{flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:10px}
+  table.ptable .verdict label{padding:5px 11px;font-size:12px;width:100%}
+  table.ptable textarea{width:100%;font-family:inherit;font-size:13.5px;padding:9px 10px;border:1px solid var(--gray-mid);
+    border-radius:8px;resize:vertical;min-height:72px;background:#fff;color:var(--ink)}
+  table.ptable textarea:focus{outline:2px solid var(--a1);outline-offset:1px;border-color:var(--a1)}
+  .hubmap{margin-top:10px}
+  .hublab{display:block;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--a1);margin-bottom:6px}
+  .hubchip{display:inline-block;font-size:11.5px;font-weight:600;color:var(--navy);background:var(--a4);
+    border:1px solid var(--a3);border-radius:6px;padding:3px 8px;margin:0 5px 5px 0;line-height:1.3}
+  .hubchip.alt{background:var(--amber-fill);border-color:#EAD6AE;color:var(--amber)}
+
+  .submitbar{margin-top:26px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .btn{appearance:none;border:0;font-family:inherit;font-weight:700;font-size:15px;cursor:pointer;
+    padding:13px 24px;border-radius:9px}
+  .btn.primary{background:var(--navy);color:#fff}
+  .btn.primary:hover{background:#173a63}
+  .btn.ghost{background:#fff;border:1px solid var(--gray-mid);color:var(--navy)}
+  .btn.ghost:hover{border-color:var(--navy)}
+  .btn:focus-visible{outline:3px solid var(--a2);outline-offset:2px}
+  .err{color:var(--red);font-size:13.5px;font-weight:600;display:none}
+  .err.show{display:block}
+
+  /* ---------- Next steps (Screen 4) ---------- */
+  .confirm{display:none;background:linear-gradient(180deg,#fff,var(--ok-fill));border:1px solid var(--a3);
+    border-left:5px solid var(--a1);border-radius:12px;padding:18px 22px;margin-bottom:24px}
+  .confirm.show{display:block}
+  .confirm h3{color:var(--navy)} .confirm .check{font-size:22px;margin-right:8px}
+  table.owners{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px;background:#fff;
+    border:1px solid var(--hair);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  table.owners th,table.owners td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--hair);vertical-align:top}
+  table.owners thead th{background:var(--navy);color:#fff;font-size:12px;letter-spacing:.02em}
+  table.owners tbody tr:last-child td{border-bottom:0}
+  table.owners td:first-child{font-weight:700;color:var(--navy);white-space:nowrap}
+
+  details.deploy{margin-top:30px;font-size:13px;color:var(--sub);background:#fff;border:1px dashed var(--gray-mid);
+    border-radius:10px;padding:6px 16px}
+  details.deploy summary{cursor:pointer;font-weight:700;color:var(--navy);padding:8px 0;font-size:12.5px}
+  details.deploy code{background:var(--paper);padding:1px 5px;border-radius:4px;font-size:12px}
+  details.deploy pre{background:var(--navy-dark);color:#DCE6F5;padding:12px 14px;border-radius:8px;overflow:auto;font-size:12px}
+
+  .navbtns{display:flex;justify-content:space-between;margin-top:34px;gap:12px}
+  footer.foot{background:var(--navy-dark);color:var(--a2);font-size:11px;padding:16px 0;text-align:center}
+  footer.foot .wrap{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <img src="data:image/png;base64,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" alt="YCP">
+    <div class="divider"></div>
+    <div class="htext">
+      <span class="k">MSD Global Practice</span>
+      <span class="t">One YCP — Industry Practice Alignment</span>
+    </div>
+    <div class="status">
+      For MP review · target ratification<br><b>DMC 18 Aug &amp; GMC 19 Aug 2026</b>
+    </div>
+  </div>
+</header>
+
+<nav class="steps" role="tablist" aria-label="Steps">
+  <div class="wrap">
+    <button class="stepbtn" role="tab" aria-selected="true"  data-screen="s1"><span class="n">1</span>The problem</button>
+    <button class="stepbtn" role="tab" aria-selected="false" data-screen="s2"><span class="n">2</span>How we align</button>
+    <button class="stepbtn" role="tab" aria-selected="false" data-screen="s3"><span class="n">3</span>Proposed standard &amp; your input</button>
+    <button class="stepbtn" role="tab" aria-selected="false" data-screen="s4"><span class="n">4</span>What happens next</button>
+  </div>
+</nav>
+
+<main>
+<div class="wrap">
+
+  <!-- ============ SCREEN 1 ============ -->
+  <section class="screen active" id="s1" role="tabpanel">
+    <div class="screen-head">
+      <p class="eyebrow">The problem</p>
+      <h1 class="lead">We define our industries in five places — and they don't match.</h1>
+      <p class="sub">YCP names its industry practices differently on the public website, in the credentials pack, in HUB, in the internal Expert database, and on the MSD Global Focus slide. The same practice appears under different names, at different levels of detail, or not at all. That creates friction in business development, staffing, reporting, and how we show up to clients. This tool proposes one standard and asks for your input to close it.</p>
+    </div>
+
+    <div class="matrix-meta">
+      <div class="stat warn"><div class="big" id="statDiv">–</div><div class="lab">cells that diverge or are missing</div></div>
+      <div class="stat"><div class="big">5</div><div class="lab">internal sources compared</div></div>
+      <div class="stat good"><div class="big" id="statAligned">–</div><div class="lab">concept defined identically everywhere</div></div>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw ok"></i> Present &amp; consistent</span>
+      <span><i class="sw div"></i> Named, split or scoped differently</span>
+      <span><i class="sw gap"></i> Missing entirely</span>
+      <span style="color:var(--gray-mid)">Hover any highlighted cell for the specific issue</span>
+    </div>
+
+    <div class="matrix-scroll">
+      <table class="matrix" id="matrix">
+        <thead>
+          <tr>
+            <th>Industry concept</th>
+            <th>Public website</th>
+            <th>Credentials pack</th>
+            <th>HUB (project tagging)</th>
+            <th>Expert database</th>
+            <th>MSD Global Focus</th>
+          </tr>
+        </thead>
+        <tbody><!-- rendered by JS --></tbody>
+      </table>
+    </div>
+
+    <div class="discs">
+      <p class="eyebrow" style="margin-top:24px">Where it hurts</p>
+      <ul class="disc-list">
+        <li><span class="tag">Same practice, five names</span><b>Energy</b> shows up as “Energy &amp; Natural Resources”, “Energy &amp; Materials” and “Chemicals &amp; Energy”, and HUB breaks it into four separate tiles.</li>
+        <li><span class="tag">Different granularity</span>HUB fragments <b>Industrials</b> into three tiles and <b>Energy</b> into four, while the website keeps each as one — so roll-ups don't reconcile.</li>
+        <li class="gap"><span class="tag">Missing where it matters</span><b>Public Sector</b> is a named MSD global focus, yet the Expert database has no bucket for it — public-sector experts can't be found.</li>
+        <li><span class="tag">Conceptual conflict</span><b>Private Equity</b> is treated as an industry in four sources, though our PE work is value creation delivered inside other industries.</li>
+        <li><span class="tag">Exists in one place only</span><b>Aerospace &amp; Defense</b> (website), <b>Real Estate</b> (HUB) and <b>Professional Services</b> (HUB) appear in a single source each.</li>
+        <li><span class="tag">The exception</span>Only <b>TMT</b> is defined identically across all five sources — proof the rest is fixable, not fundamental.</li>
+      </ul>
+    </div>
+
+    <div class="peerbox">
+      <p class="eyebrow">And versus the market</p>
+      <h3>Our list is fine. Our consistency isn't.</h3>
+      <p style="margin:0;font-size:14.5px;color:var(--sub)">Benchmarked against both the strategy cohort and the independent/turnaround cohort, all six firms converge on a near-identical set of ~10–14 industry practices. YCP already sits inside that consensus — the problem to solve is internal inconsistency, not the choice of industries.</p>
+      <p class="firms">Strategy: McKinsey · BCG · Bain &nbsp;|&nbsp; Independent / turnaround: Alvarez &amp; Marsal · Roland Berger · AlixPartners</p>
+    </div>
+
+    <div class="navbtns"><span></span>
+      <button class="btn primary" data-go="s2">How we'll align →</button>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 2 ============ -->
+  <section class="screen" id="s2" role="tabpanel">
+    <div class="screen-head">
+      <p class="eyebrow">How we align</p>
+      <h1 class="lead">One standard, agreed once, adopted everywhere.</h1>
+    </div>
+
+    <div class="hypo">
+      <p class="eyebrow">Hypothesis — the purpose of this tool</p>
+      <p>YCP already serves a coherent set of industries — the same set our peers and our own website use. The fragmentation is <b>internal</b>: four systems each captured a slice of that set for their own purpose, with no single owner. A single <b>One YCP industry standard</b> — defined once and adopted across the website, HUB, the Expert database, and all internal and external materials — closes this for good.</p>
+    </div>
+
+    <p class="eyebrow" style="margin-top:26px">The process</p>
+    <div class="flow">
+      <div class="step"><div class="n">1</div><h4>Lay out the hypothesis</h4><p>Proposed standard set out in this tool, with the reasoning for each call.</p></div>
+      <div class="step here"><div class="n">2</div><h4>Get MP comments</h4><p>Managing Partners review and comment on each practice (next screen).</p><span class="badge">You are here</span></div>
+      <div class="step"><div class="n">3</div><h4>Consolidate &amp; finalise</h4><p>Comments reconciled into a single final standard.</p></div>
+      <div class="step"><div class="n">4</div><h4>Identify the updates</h4><p>What changes, where — website, HUB, Expert DB, credentials, GFI — and who owns each.</p></div>
+      <div class="step"><div class="n">5</div><h4>Ratify at DMC &amp; GMC</h4><p>Final standard tabled and signed off as the global standard.</p></div>
+    </div>
+
+    <div class="timeline">
+      <p class="eyebrow">Target timeline</p>
+      <ul class="tl">
+        <li><span class="d">Week of 28 Jul</span> <span class="x">— tool circulated to Managing Partners</span></li>
+        <li><span class="d">28 Jul – 7 Aug</span> <span class="x">— comment window (~one week for input)</span></li>
+        <li><span class="d">Week of 11 Aug</span> <span class="x">— consolidate comments and finalise the standard</span></li>
+        <li class="key"><span class="d">18 Aug (DMC) &amp; 19 Aug (GMC)</span> <span class="x">— ratify and document the finalised split</span></li>
+      </ul>
+    </div>
+
+    <div class="navbtns">
+      <button class="btn ghost" data-go="s1">← The problem</button>
+      <button class="btn primary" data-go="s3">See the proposed standard →</button>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 3 ============ -->
+  <section class="screen" id="s3" role="tabpanel">
+    <div class="screen-head">
+      <p class="eyebrow">Proposed standard &amp; your input</p>
+      <h1 class="lead">The One YCP industry standard — 10 practices.</h1>
+      <p class="sub">Two levels: each <b>industry practice</b> below is the top-level unit, and the detailed <b>HUB sub-industries</b> — maintained by the OXD team, given the breadth of their work — roll up into it. Each row shows the practice, what it includes (with its HUB sub-industries), and why. Add your reaction and comments in the last column. Responses go only to the MSD Global Practice lead.</p>
+    </div>
+
+    <div class="youbar">
+      <h3>Your details</h3>
+      <p style="margin:0;font-size:13.5px;color:var(--sub)">So your comments can be attributed during consolidation. Other reviewers won't see your responses.</p>
+      <div class="row">
+        <div class="field"><label for="rvName">Name <span class="req">*</span></label><input id="rvName" type="text" placeholder="Your name" autocomplete="name"></div>
+        <div class="field"><label for="rvOffice">Office / role <span style="color:var(--gray-mid);font-weight:400">(optional)</span></label><input id="rvOffice" type="text" placeholder="e.g. Managing Partner, Tokyo"></div>
+      </div>
+    </div>
+
+    <p class="eyebrow">The 10 proposed practices &amp; their HUB sub-industries</p>
+    <div class="ptable-scroll">
+      <table class="ptable" id="ptable">
+        <colgroup>
+          <col class="c-name"><col class="c-inc"><col class="c-why"><col class="c-com">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Proposed practice nomenclature</th>
+            <th>What all is included</th>
+            <th>Why</th>
+            <th>Your comments &amp; reactions</th>
+          </tr>
+        </thead>
+        <tbody><!-- rendered by JS --></tbody>
+      </table>
+    </div>
+
+    <div class="card pad" style="margin-top:18px;border-left:4px solid var(--amber)">
+      <p class="eyebrow" style="color:var(--amber)">Treated as attributes — not standalone practices</p>
+      <div class="grid2" style="gap:14px">
+        <div>
+          <p style="font-size:14px;margin:0 0 8px"><b style="color:var(--navy)">Private Equity.</b> PE engagements are classified under the <b>target / portfolio company's own industry</b> — that's where the work is actually delivered — so PE is not a standalone practice. To keep PE clients identifiable, HUB carries a separate <b>Client Type</b> tag (e.g. “Private Equity / sponsor”) alongside the industry, so we can still pull all PE-sponsor work in one view. <i>This differs from the current website, which lists PE as an industry.</i></p>
+          <p style="font-size:14px;margin:0"><b style="color:var(--navy)">Professional Services / Advisors.</b> Not a client industry at any peer firm — kept as a client tag, not a practice.</p>
+          <div class="hubmap" id="hubCross" style="margin-top:12px"></div>
+        </div>
+        <div>
+          <p style="font-size:14px;margin:0 0 10px"><b style="color:var(--navy)">Aerospace &amp; Defense.</b> Proposed to split: aviation → Transportation &amp; Logistics, defense → Industrials.</p>
+          <div class="respond" style="border-top:0;padding:0;background:none">
+            <div class="rlab">Your reaction to these treatments</div>
+            <div data-slot="attr"></div>
+            <textarea id="comment_attr" placeholder="Do you agree PE should be an ownership attribute rather than an industry? And with splitting Aerospace & Defense across Transportation and Industrials?"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <details class="deploy" style="border-style:solid;border-color:var(--a3);margin-top:18px">
+      <summary style="color:var(--navy)">Supporting rule — how we decide where “infrastructure” work sits (for reference)</summary>
+      <p style="margin:10px 0 4px;font-size:14px">A single test keeps the three build-heavy practices from overlapping. Classify by the <b>asset's economic purpose</b>, not the construction activity (EPC happens everywhere, so it can't be the classifier). Apply in order, stop at the first match:</p>
+      <ol class="rule-steps">
+        <li><span class="q">1 · Produces, transmits or extracts energy / resources / water?</span><span class="arrow">→ Energy &amp; Natural Resources</span></li>
+        <li><span class="q">2 · Else — moves people or goods?</span><span class="arrow">→ Transportation &amp; Logistics</span></li>
+        <li><span class="q">3 · Else — built environment?</span><span class="arrow">→ Construction &amp; Infrastructure</span></li>
+      </ol>
+      <div class="worked" style="margin-top:12px"><b>For example:</b> a highway or metro line → Transportation &amp; Logistics · a power plant or transmission grid → Energy &amp; Natural Resources · an office tower, hospital or factory building → Construction &amp; Infrastructure.</div>
+      <div class="respond" style="margin-top:14px;border-top:0;padding:0;background:none">
+        <div class="rlab">Any comments on this rule (optional)</div>
+        <div data-verdicts="rule"></div>
+        <textarea id="comment_rule" placeholder="Any edge cases or refinements to the asset-purpose rule?"></textarea>
+      </div>
+    </details>
+
+    <div class="err" id="submitErr">Please add your name at the top before submitting.</div>
+    <div class="submitbar">
+      <button class="btn primary" id="submitBtn">Submit my response</button>
+      <button class="btn ghost" id="downloadBtn">Download my response (JSON)</button>
+      <span style="font-size:13px;color:var(--sub)">You can change any answer before submitting.</span>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 4 ============ -->
+  <section class="screen" id="s4" role="tabpanel">
+    <div class="confirm" id="confirmBox">
+      <h3><span class="check">✓</span>Response recorded</h3>
+      <p style="margin:0;font-size:14.5px;color:var(--sub)" id="confirmText">Thank you — your comments have been captured and will be included in consolidation.</p>
+    </div>
+
+    <div class="screen-head">
+      <p class="eyebrow">What happens next</p>
+      <h1 class="lead">From your input to a ratified standard.</h1>
+    </div>
+
+    <div class="grid2">
+      <div class="card pad">
+        <p class="eyebrow">The path from here</p>
+        <ul class="tl" style="margin-top:6px">
+          <li><span class="d">Now</span> <span class="x">— your response is recorded, visible only to the MSD Global Practice lead.</span></li>
+          <li><span class="d">Week of 11 Aug</span> <span class="x">— all MP comments consolidated into a single final standard.</span></li>
+          <li class="key"><span class="d">18–19 Aug</span> <span class="x">— tabled at DMC and GMC for sign-off as the global internal &amp; external standard.</span></li>
+          <li><span class="d">Post-ratification</span> <span class="x">— owners update each system (below).</span></li>
+        </ul>
+      </div>
+      <div class="card pad">
+        <p class="eyebrow">The two calls we most want views on</p>
+        <p style="font-size:14px"><b style="color:var(--navy)">Private Equity</b> — proposed as an <i>ownership flag</i> on the operating industry, not a standalone practice (our PE work is value creation inside other industries). This differs from the current website.</p>
+        <p style="font-size:14px;margin:0"><b style="color:var(--navy)">Aerospace &amp; Defense</b> — proposed to split: aviation → Transportation &amp; Logistics, defense → Industrials. Flag on Screen 3 if your practice sees this differently.</p>
+      </div>
+    </div>
+
+    <p class="eyebrow" style="margin-top:26px">Once ratified — what gets updated, where, by whom</p>
+    <table class="owners">
+      <thead><tr><th>System</th><th>Update</th><th>Owner</th></tr></thead>
+      <tbody>
+        <tr><td>Public website</td><td>Adopt the 10-practice names; remove PE as an industry; split Aerospace &amp; Defense</td><td>Marketing + MSD Global Practice</td></tr>
+        <tr><td>Credentials pack</td><td>Merge Construction + Infrastructure tile; fold F&amp;B into Consumer &amp; Retail; align names</td><td>MSD Global Practice</td></tr>
+        <tr><td>HUB</td><td>Add parent-practice roll-up behind the 32 sectors; add PE/sponsor flag; enable account-level roll-up</td><td>YCP Digital (Arfian)</td></tr>
+        <tr><td>Expert database</td><td>Expand to the 10 practices; add Public Sector &amp; Transportation; drop the separate PE bucket</td><td>YCP Digital (Arfian)</td></tr>
+        <tr><td>GFI / MSD Focus</td><td>Regenerate the focus overlay from the standard, as an attribute rather than a separate list</td><td>Global Practice</td></tr>
+      </tbody>
+    </table>
+
+    <details class="deploy">
+      <summary>Deployment notes for YCP Digital (Arfian)</summary>
+      <p>This file is fully self-contained. To collect responses centrally, replace the body of <code>submitResponses(payload)</code> at the bottom of the script with a POST to your endpoint; it currently falls back to a client-side JSON download so the tool works standalone. Store each submission keyed by reviewer name + timestamp and expose a read-only aggregation to the practice lead. Payload schema is documented above the function. Please don't use browser storage.</p>
+      <pre>async function submitResponses(payload){
+  const r = await fetch('/api/ycp-taxonomy/responses', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  return r.ok;
+}</pre>
+    </details>
+
+    <div class="navbtns">
+      <button class="btn ghost" data-go="s3">← Back to my input</button>
+      <span></span>
+    </div>
+  </section>
+
+</div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>YCP Holdings — MSD Global Practice · Internal working document for MP syndication</span>
+    <span>One YCP Industry Practice Alignment · v1</span>
+  </div>
+</footer>
+
+<script>
+/* ============================================================================
+   DATA
+   ==========================================================================*/
+
+// Screen 1 — comparison matrix. status: 'ok' | 'div' | 'gap'
+// m = short note shown on hover (the specific issue)
+const MATRIX = [
+  {c:"Automotive & Mobility", cells:[
+    {v:"Automotive & Mobility",s:"ok"},
+    {v:"Automotive & Mobility",s:"ok"},
+    {v:"Automotive & Mobility",s:"ok"},
+    {v:"Automotive & Mobility",s:"ok"},
+    {v:"Mobility",s:"div",m:"Shortened label — same practice"}]},
+  {c:"Aerospace & Defense", cells:[
+    {v:"Aerospace & Defense",s:"div",m:"On the public site only"},
+    {v:"—",s:"gap",m:"Not in the credentials pack"},
+    {v:"—",s:"gap",m:"No HUB sector"},
+    {v:"—",s:"gap",m:"No expert category"},
+    {v:"—",s:"gap",m:"Not a focus line"}]},
+  {c:"Construction & Infrastructure", cells:[
+    {v:"Construction & Infrastructure",s:"ok"},
+    {v:"Construction + Infrastructure",s:"div",m:"Split across two separate tiles"},
+    {v:"Construction & Infrastructure",s:"ok"},
+    {v:"Construction & Infrastructure",s:"ok"},
+    {v:"via ‘Industrial’ ?",s:"div",m:"Not explicit — unclear if inside Industrial"}]},
+  {c:"Real Estate", cells:[
+    {v:"—",s:"gap",m:"Not listed on the website"},
+    {v:"—",s:"gap",m:"Not in the credentials pack"},
+    {v:"Real Estate",s:"div",m:"Only HUB has it — parent practice undefined"},
+    {v:"—",s:"gap",m:"No expert category"},
+    {v:"—",s:"gap",m:"Not a focus line"}]},
+  {c:"Consumer & Retail", cells:[
+    {v:"Consumer & Retail",s:"ok"},
+    {v:"Consumer & Retail",s:"ok"},
+    {v:"Consumer Goods & Service",s:"div",m:"Different label"},
+    {v:"Consumer & Retail",s:"ok"},
+    {v:"Consumer & Retail",s:"ok"}]},
+  {c:"Food, Beverage & Restaurants", cells:[
+    {v:"Restaurant & Food Services",s:"div",m:"Standalone industry on the site"},
+    {v:"F&B",s:"div",m:"Separate credentials tile"},
+    {v:"Food, Bev & Tobacco / Hotels & Restaurants",s:"div",m:"Two separate HUB sectors"},
+    {v:"—",s:"gap",m:"No expert category"},
+    {v:"in Consumer & Retail",s:"ok",m:"Folded into Consumer"}]},
+  {c:"Energy & Natural Resources", cells:[
+    {v:"Energy & Natural Resources",s:"ok"},
+    {v:"Energy & Materials",s:"div",m:"Different label"},
+    {v:"Chemicals & Energy / Oil&Gas / Mining / Utilities",s:"div",m:"Fragmented into four HUB sectors"},
+    {v:"Chemicals & Energy",s:"div",m:"Different label"},
+    {v:"Energy & Materials",s:"div",m:"Different label"}]},
+  {c:"Financial Services", cells:[
+    {v:"Financial Services",s:"ok"},
+    {v:"Investment & Finance",s:"div",m:"Different label — also merges in PE"},
+    {v:"Financial Services",s:"ok"},
+    {v:"Financial Services",s:"ok"},
+    {v:"—",s:"gap",m:"Not a focus line"}]},
+  {c:"Private Equity & Investors", cells:[
+    {v:"Private Equity & Investments",s:"div",m:"Listed as an industry — conflicts with proposed treatment"},
+    {v:"inside Investment & Finance",s:"div",m:"Bundled with Financial Services"},
+    {v:"Private Equity and Investors",s:"div",m:"Its own HUB sector"},
+    {v:"Private Equity & Investment",s:"div",m:"Its own expert category"},
+    {v:"—",s:"gap",m:"Not a focus line"}]},
+  {c:"Healthcare & Life Sciences", cells:[
+    {v:"Healthcare",s:"div",m:"‘Life Sciences’ not explicit"},
+    {v:"Healthcare",s:"div",m:"‘Life Sciences’ not explicit"},
+    {v:"Healthcare / Pharma, Chemicals & Research",s:"div",m:"Pharma split into a separate sector"},
+    {v:"Healthcare",s:"ok"},
+    {v:"Healthcare",s:"ok"}]},
+  {c:"Industrials", cells:[
+    {v:"Industrials",s:"ok"},
+    {v:"Industrials",s:"ok"},
+    {v:"Manufacturing / Ind. Equipment / Electrical",s:"div",m:"Fragmented into three HUB sectors"},
+    {v:"Manufacturing",s:"div",m:"Different label"},
+    {v:"Industrial",s:"div",m:"Shortened label"}]},
+  {c:"Public Sector & Institutions", cells:[
+    {v:"Public Sector",s:"ok"},
+    {v:"Public Sector",s:"ok"},
+    {v:"Government & Education",s:"div",m:"Different label"},
+    {v:"—",s:"gap",m:"No expert category — yet it's a named MSD focus"},
+    {v:"Public Sector",s:"ok"}]},
+  {c:"Transportation & Logistics", cells:[
+    {v:"Transportation & Logistics",s:"ok"},
+    {v:"Logistics",s:"div",m:"Narrower label — transport omitted"},
+    {v:"Distribution / Aviation",s:"div",m:"Split across two HUB sectors"},
+    {v:"—",s:"gap",m:"No expert category"},
+    {v:"Logistics & Transportation",s:"div",m:"Word order differs"}]},
+  {c:"Technology, Media & Telecom", cells:[
+    {v:"TMT",s:"ok"},{v:"TMT",s:"ok"},{v:"TMT",s:"ok"},{v:"TMT",s:"ok"},{v:"TMT",s:"ok"}]},
+  {c:"Professional Services / Advisors", cells:[
+    {v:"—",s:"gap",m:"Not on the site"},
+    {v:"—",s:"gap",m:"Not in the credentials pack"},
+    {v:"Advisors / Professional Services / Call Centres",s:"div",m:"Treated as industries — not a real client vertical"},
+    {v:"—",s:"gap",m:"No expert category"},
+    {v:"—",s:"gap",m:"Not a focus line"}]},
+];
+
+// Screen 3 — the 10 proposed practices. hub[] = the HUB sub-industries (OXD) that roll up.
+const PRACTICES = [
+  {id:"auto",name:"Automotive & Mobility",
+   def:"Vehicle OEMs, components & suppliers, EV & charging, and mobility services.",
+   hub:["Automotive & Mobility"],
+   why:"Universal across every internal source and every peer firm — unchanged."},
+  {id:"construction",name:"Construction & Infrastructure",
+   def:"The built environment and the firms that develop and build it: buildings, social & urban infrastructure, real estate, industrial/factory construction, building materials, and diversified EPC & developers.",
+   rolls:["Includes real estate and diversified EPC / developers"],
+   hub:["Construction & Infrastructure","Real Estate"],
+   why:"Merges the two separate credential tiles into one. Scope is set by the asset-purpose rule below — the residual built environment once energy and transport assets are removed."},
+  {id:"consumer",name:"Consumer & Retail",
+   def:"Consumer goods & CPG, retail, packaged food & beverage, restaurants & food service, hospitality & leisure, luxury, and gems & jewellery.",
+   hub:["Consumer Goods & Service","Food, Beverage & Tobacco","Hotels, Restaurants & Leisure","Gems & Jewellery"],
+   why:"Folds packaged F&B and Restaurant & Food Services in — consistent with how GFI already operates, and with every peer (food is never a standalone top-level practice)."},
+  {id:"energy",name:"Energy & Natural Resources",
+   def:"Power generation incl. renewables, transmission & distribution / grid, oil & gas, mining & metals, chemicals, water & utilities, and agriculture.",
+   hub:["Chemicals & Energy","Oil, Gas & Petrochemicals","Mining & Raw Material","Utilities","Agriculture, Farming & Forestry"],
+   why:"Adopts the website / market-standard label and consolidates HUB's separate energy & resource sub-industries. Captures all energy-purpose assets under the boundary rule."},
+  {id:"fs",name:"Financial Services (BFSI)",
+   def:"Banking, insurance, asset & wealth management, capital markets, NBFCs, and fintech.",
+   hub:["Financial Services"],
+   why:"Scoped cleanly to BFSI. Private Equity is removed as an industry and handled as an ownership attribute — see the block below."},
+  {id:"health",name:"Healthcare & Life Sciences",
+   def:"Providers & payers, medical devices / medtech, pharmaceuticals, biotech, and diagnostics.",
+   hub:["Healthcare","Pharma, Chemicals & Research"],
+   why:"The public site says just ‘Healthcare’; adding ‘& Life Sciences’ makes clear that pharmaceuticals, biotech and medical devices are in scope, not only providers and payers."},
+  {id:"industrials",name:"Industrials",
+   def:"Industrial goods & equipment, manufacturing, machinery, electrical & electronics, packaging/paper/printing, textiles, and defense manufacturing.",
+   rolls:["Includes defense manufacturing (the defense side of Aerospace & Defense)"],
+   hub:["Manufacturing","Industrial Equipment","Electrical & Electronics","Packaging, Paper, Printing","Textiles"],
+   why:"Adopts the website label and consolidates HUB's fragmented manufacturing sub-industries into one practice."},
+  {id:"public",name:"Public Sector & Institutions",
+   def:"Government & agencies, education, multilaterals & DFIs (ADB, IFC, JICA), associations, and NGOs & charities.",
+   hub:["Government & Education","Associations, Organisations & Charities"],
+   why:"Named a global focus but missing from the Expert database — this closes the gap and gives multilateral, government and institutional work a clear home."},
+  {id:"transport",name:"Transportation & Logistics",
+   def:"Transport infrastructure and operations (roads, highways, rail, metro, airports, ports), aviation & airlines, logistics, warehousing, 3PL, and freight.",
+   rolls:["Includes aviation / airlines (the aerospace side of Aerospace & Defense)"],
+   hub:["Aviation","Distribution"],
+   why:"Standalone at senior peers. Captures all movement-purpose assets under the boundary rule."},
+  {id:"tmt",name:"Technology, Media & Telecommunications",
+   def:"Software, hardware, semiconductors, internet & platforms, IT & IT-enabled services (ITeS / BPO / call centres), media & entertainment, and telecom.",
+   rolls:["Includes IT-enabled services — BPO and call centres (the ITeS / IT-BPM space)"],
+   hub:["Technology, Media & Telecommunications","Call Centres"],
+   why:"Consistent across sources. IT-enabled services — BPO and call centres — sit here too: the same delivery model and often the same players as IT services (the IT-BPM sector)."},
+];
+
+// HUB sub-industries handled as cross-cutting tags / by primary business (not a standalone practice)
+const HUB_CROSSCUTTING = ["Private Equity and Investors","Advisors","Professional Services","Conglomerate","Holding Companies","Others"];
+
+const VERDICT_OPTS = [
+  {k:"agree",  label:"Agree"},
+  {k:"change", label:"Suggest a change"},
+  {k:"object", label:"Object"},
+];
+
+/* ============================================================================
+   RENDER
+   ==========================================================================*/
+function el(tag, cls, html){const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e;}
+
+// -- matrix --
+(function renderMatrix(){
+  const tb = document.querySelector("#matrix tbody");
+  let divCount=0, alignedRows=0;
+  MATRIX.forEach(row=>{
+    const tr = el("tr");
+    const rowAligned = row.cells.every(c=>c.s==="ok");
+    if(rowAligned){tr.className="aligned-row"; alignedRows++;}
+    tr.appendChild(el("th",null,row.c));
+    row.cells.forEach(c=>{
+      if(c.s!=="ok") divCount++;
+      const td = el("td","cell "+c.s);
+      td.innerHTML = `<span class="v">${c.v}</span>`;
+      if(c.m){ td.title = c.m; td.innerHTML += `<span class="m">${c.m}</span>`; }
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  document.getElementById("statDiv").textContent = divCount;
+  document.getElementById("statAligned").textContent = alignedRows;
+})();
+
+// -- verdict control factory --
+function verdictGroup(id){
+  const wrap = el("div","verdicts");
+  wrap.dataset.verdicts = id;
+  VERDICT_OPTS.forEach(o=>{
+    const v = el("div","verdict "+o.k);
+    const inputId = `v_${id}_${o.k}`;
+    v.innerHTML = `<input type="radio" name="verdict_${id}" id="${inputId}" value="${o.k}">
+      <label for="${inputId}"><span class="dot"></span>${o.label}</label>`;
+    wrap.appendChild(v);
+  });
+  return wrap;
+}
+// fill the rule-box verdict group
+document.querySelector('[data-verdicts="rule"]').replaceWith(verdictGroup("rule"));
+
+// -- practices table --
+(function renderPractices(){
+  const tb = document.querySelector("#ptable tbody");
+  PRACTICES.forEach((p,i)=>{
+    let inc = `<div>${p.def}</div>`;
+    if(p.rolls && p.rolls.length){
+      inc += "<ul class='rolls'>"+p.rolls.map(r=>`<li>${r}</li>`).join("")+"</ul>";
+    }
+    if(p.hub && p.hub.length){
+      inc += `<div class="hubmap"><span class="hublab">HUB sub-industries</span>`
+           + p.hub.map(h=>`<span class="hubchip">${h}</span>`).join("")
+           + `</div>`;
+    }
+    const tr = el("tr");
+    const cName = el("td"); cName.innerHTML = `<span class="pnum">Practice ${i+1}</span><span class="pname">${p.name}</span>`;
+    const cInc  = el("td"); cInc.innerHTML = inc;
+    const cWhy  = el("td"); cWhy.innerHTML = `<div class="why">${p.why}</div>`;
+    const cCom  = el("td");
+    cCom.appendChild(verdictGroup(p.id));
+    const ta = el("textarea"); ta.id = "comment_"+p.id;
+    ta.placeholder = "Comments & reactions";
+    cCom.appendChild(ta);
+    tr.append(cName, cInc, cWhy, cCom);
+    tb.appendChild(tr);
+  });
+  // cross-cutting attributes block (static HTML) — inject its verdict group
+  const attrSlot = document.querySelector('[data-slot="attr"]');
+  if(attrSlot) attrSlot.replaceWith(verdictGroup("attr"));
+  // list the HUB sub-industries that are handled as tags / by primary business
+  const hc = document.getElementById("hubCross");
+  if(hc){
+    hc.innerHTML = `<span class="hublab">HUB sub-industries handled here (as a tag, or by primary business)</span>`
+      + HUB_CROSSCUTTING.map(h=>`<span class="hubchip alt">${h}</span>`).join("")
+      + `<div style="font-size:12px;color:var(--sub);margin-top:8px;width:100%">Private Equity is captured via a Client Type tag (the engagement itself is classified by the target's industry); Advisors and Professional Services become client tags; Conglomerate, Holding Companies and Others are tagged by the client's primary business.</div>`;
+  }
+})();
+
+/* ============================================================================
+   NAVIGATION
+   ==========================================================================*/
+const screens = ["s1","s2","s3","s4"];
+function show(id){
+  screens.forEach(s=>document.getElementById(s).classList.toggle("active", s===id));
+  document.querySelectorAll(".stepbtn").forEach(b=>b.setAttribute("aria-selected", b.dataset.screen===id));
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+document.querySelectorAll(".stepbtn").forEach(b=>b.addEventListener("click",()=>show(b.dataset.screen)));
+document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>show(b.dataset.go)));
+
+/* ============================================================================
+   COLLECT + SUBMIT
+   ==========================================================================*/
+function collectPayload(){
+  const rows = {};
+  const ids = ["rule", ...PRACTICES.map(p=>p.id), "attr"];
+  ids.forEach(id=>{
+    const checked = document.querySelector(`input[name="verdict_${id}"]:checked`);
+    const comment = document.getElementById("comment_"+id);
+    rows[id] = { verdict: checked ? checked.value : null, comment: comment ? comment.value.trim() : "" };
+  });
+  return {
+    tool: "One YCP Industry Practice Alignment",
+    version: "1",
+    reviewer: {
+      name: document.getElementById("rvName").value.trim(),
+      office: document.getElementById("rvOffice").value.trim(),
+      submittedAt: new Date().toISOString()
+    },
+    responses: rows
+  };
+}
+
+function downloadJSON(payload){
+  const safe = (payload.reviewer.name || "anonymous").replace(/[^\w\-]+/g,"_");
+  const stamp = new Date().toISOString().slice(0,10);
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `YCP_taxonomy_response_${safe}_${stamp}.json`;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 0);
+}
+
+const errEl = document.getElementById("submitErr");
+function requireName(){
+  const ok = document.getElementById("rvName").value.trim().length>0;
+  errEl.classList.toggle("show", !ok);
+  if(!ok){ show("s3"); document.getElementById("rvName").focus(); }
+  return ok;
+}
+
+document.getElementById("downloadBtn").addEventListener("click",()=>{
+  if(!requireName()) return;
+  downloadJSON(collectPayload());
+});
+
+document.getElementById("submitBtn").addEventListener("click", async ()=>{
+  if(!requireName()) return;
+  const payload = collectPayload();
+  let ok=false;
+  try{ ok = await submitResponses(payload); }catch(e){ ok=false; }
+  const box = document.getElementById("confirmBox");
+  const txt = document.getElementById("confirmText");
+  box.classList.add("show");
+  txt.innerHTML = ok
+    ? `Thank you, ${payload.reviewer.name.split(" ")[0]||""}. Your comments have been captured and will be included in consolidation ahead of the 18–19 August DMC/GMC.`
+    : `Your response was saved locally as a JSON file — please send it to the MSD Global Practice lead. (When hosted on the internal server, submissions are captured automatically.)`;
+  show("s4");
+});
+
+/* ----------------------------------------------------------------------------
+   submitResponses(payload) → Promise<boolean>
+   ----------------------------------------------------------------------------
+   PAYLOAD SCHEMA:
+   {
+     tool, version,
+     reviewer: { name, office, submittedAt(ISO) },
+     responses: {
+       rule:  { verdict: "agree"|"change"|"object"|null, comment: string },
+       auto:  { ... }, construction: {...}, consumer:{...}, energy:{...},
+       fs:{...}, health:{...}, industrials:{...}, public:{...},
+       transport:{...}, tmt:{...},
+       attr:  { ... }   // cross-cutting: PE + Aerospace/Defense
+     }
+   }
+
+   YCP DIGITAL: replace the body below with a POST to your endpoint and return
+   whether it succeeded. The standalone fallback downloads the JSON so the tool
+   works before the backend is wired. Do not use localStorage.
+   --------------------------------------------------------------------------*/
+async function submitResponses(payload){
+  // TODO(Arfian): POST to internal endpoint, e.g.
+  //   const r = await fetch('/api/ycp-taxonomy/responses', {
+  //     method:'POST', headers:{'Content-Type':'application/json'},
+  //     body: JSON.stringify(payload) });
+  //   return r.ok;
+  downloadJSON(payload);      // standalone fallback
+  return false;               // false → UI tells reviewer to send the file
+}
+</script>

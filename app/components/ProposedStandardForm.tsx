@@ -144,10 +144,11 @@ export default function ProposedStandardForm({
         <div className="grid2" style={{ gap: 14 }}>
           <div>
             <p style={{ fontSize: 14, margin: "0 0 8px" }}>
-              <b style={{ color: "var(--navy)" }}>Private Equity &amp; sponsors.</b> PE work is value creation
-              delivered inside the portfolio company&apos;s own industry, so PE is captured as an ownership flag
-              (&ldquo;sponsor-owned? + sponsor name&rdquo;) on that industry, not a separate practice. Sponsor
-              relationships stay fully visible without double-classifying a project.{" "}
+              <b style={{ color: "var(--navy)" }}>Private Equity.</b> PE engagements are classified under the{" "}
+              <b>target / portfolio company&apos;s own industry</b> — that&apos;s where the work is actually
+              delivered — so PE is not a standalone practice. To keep PE clients identifiable, HUB carries a
+              separate <b>Client Type</b> tag (e.g. &ldquo;Private Equity / sponsor&rdquo;) alongside the industry,
+              so we can still pull all PE-sponsor work in one view.{" "}
               <i>This differs from the current website, which lists PE as an industry.</i>
             </p>
             <p style={{ fontSize: 14, margin: 0 }}>
@@ -162,7 +163,8 @@ export default function ProposedStandardForm({
                 </span>
               ))}
               <div style={{ fontSize: 12, color: "var(--sub)", marginTop: 8, width: "100%" }}>
-                Private Equity &amp; Advisors / Professional Services / Call Centres become tags; Conglomerate,
+                Private Equity is captured via a Client Type tag (the engagement itself is classified by the
+                target&apos;s industry); Advisors and Professional Services become client tags; Conglomerate,
                 Holding Companies and Others are tagged by the client&apos;s primary business.
               </div>
             </div>
